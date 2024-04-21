@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Charts Example with WebSocket</title>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #1c1c1c;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        
+        h1 {
+            margin-top: 50px;
+        }
+        
+        .button-container {
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .button:hover {
+            background-color: #45a049;
+        }
+        
+        #chart_div {
+            margin: 0 auto;
+        }
+        #power-button {
+            background-color: #ff0000;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #power-button.on {
+            background-color: #00ff00;
+        }
+
+        #power-button svg {
+            fill: #fff;
+            width: 24px;
+            height: 24px;
+        }
+        #connection-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #ff0000;
+            margin: 10px auto;
+        }
+
+        #connection-indicator.connected {
+            background-color: #00ff00;
+        }
+
+        #motherboard-power-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #ff0000;
+            margin: 10px auto;
+        }
+        #motherboard-power-indicator.on {
+            background-color: #00ff00;
+        }
+        #log-container {
+            width: 900px;
+            height: 200px;
+            margin: 20px auto;
+            padding: 10px;
+            background-color: #333;
+            color: #fff;
+            overflow-y: scroll;
+            text-align: left;
+        }
+
+        .log-message {
+            margin-bottom: 5px;
+        }
+    </style>
+    <script type="text/javascript">
+        window.onload = function() {
+            google.charts.load('current', {'packages':['corechart']});
+            google.charts.setOnLoadCallback(drawChart);
+        
+            var socket = io();
+            var chart;
+            var powerState = false;
+            var motherboardPowerState = false;
+        
+            var options = {
+                title: 'Price Chart',
+                curveType: 'function',
+                legend: { position: 'bottom' },
+                backgroundColor: '#1c1c1c',
+                titleTextStyle: { color: '#fff' },
+                hAxis: {
+                    textStyle: { color: '#fff' },
+                    gridlines: { color: '#333' }
+                },
+                vAxis: {
+                    textStyle: { color: '#fff' },
+                    gridlines: { color: '#333' }
+                },
+                legendTextStyle: { color: '#fff' }
+            };
+
+            socket.emit('recent_logs');
+        
+            socket.on('connect', function() {
+                updateConnectionIndicator(true);
+            });
+
+            socket.on('disconnect', function() {
+                updateConnectionIndicator(false);
+            });
+                
+            function updateConnectionIndicator(isConnected) {
+                var indicator = document.getElementById('connection-indicator');
+                if (indicator) {
+                    if (isConnected) {
+                        indicator.classList.add('connected');
+                    } else {
+                        indicator.classList.remove('connected');
+                    }
+                }
+            }
+
+            function drawChart() {
+                chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+                socket.emit('get_data', '1d'); // Initial chart with 1d data
+        
+                // Add event listeners to the buttons
+                document.getElementById('1d').addEventListener('click', function() {
+                    socket.emit('get_data', '1d');
+                });
+                document.getElementById('5d').addEventListener('click', function() {
+                    socket.emit('get_data', '5d');
+                });
+                document.getElementById('1m').addEventListener('click', function() {
+                    socket.emit('get_data', '1m');
+                });
+        
+                // Add event listener for the power button
+                var powerButton = document.getElementById('power-button');
+                if (powerButton) {
+                    powerButton.addEventListener('click', function() {
+                        powerState = !powerState;
+                        socket.emit('power_toggle', powerState);
+                        updatePowerButtonColor();
+                    });
+                }
+            }
+        
+            socket.on('chart_data', function(data) {
+                var chartData = google.visualization.arrayToDataTable(data);
+                chart.draw(chartData, options);
+            });
+        
+            socket.on('power_state', function(state) {
+                powerState = state;
+                console.log('Power state: ' + powerState);
+                updatePowerButtonColor();
+            });
+
+            socket.on('motherboard_power', function(state) {
+                console.log('Motherboard power state: ' + state);
+                motherboardPowerState = state;
+                updateMotherboardPowerButtonColor();
+
+            });
+        
+            socket.on('log_message', function(message) {
+                appendLogMessage(message);
+            });
+
+            socket.on('recent_logs', function(logs) {
+                for (var i in logs) {
+                    appendLogMessage(logs[i]);
+                }
+            });
+
+            function appendLogMessage(message) {
+                var logContainer = document.getElementById('log-container');
+                if (logContainer) {
+                    var logMessage = document.createElement('div');
+                    logMessage.classList.add('log-message');
+                    logMessage.textContent = message;
+                    logContainer.appendChild(logMessage);
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            }
+
+            function updateMotherboardPowerButtonColor() {
+                var motherboardPowerButton = document.getElementById('motherboard-power-indicator');
+                if (motherboardPowerButton) {
+                    if (motherboardPowerState) {
+                        motherboardPowerButton.classList.add('on');
+                    } else {
+                        motherboardPowerButton.classList.remove('on');
+                    }
+                }
+            }
+
+            function updatePowerButtonColor() {
+                var powerButton = document.getElementById('power-button');
+                if (powerButton) {
+                    if (powerState) {
+                        powerButton.classList.add('on');
+                    } else {
+                        powerButton.classList.remove('on');
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body>
+    <h1>Price Chart</h1>
+    
+<div class="button-container">
+    <button class="button" id="power-button">
+        <svg xmlns="http://www.w3.org/2000/svg" data-name="Layer 1" viewBox="0 0 512 640" x="0px" y="0px">
+            <title>p</title>
+            <path d="M136.68,123.21A34.59,34.59,0,0,0,91.31,71a251.26,251.26,0,1,0,327.85-1.32,34.59,34.59,0,0,0-44.95,52.6,181.94,181.94,0,0,1,63.86,138.49c0,100.39-81.68,182.07-182.07,182.07S73.93,361.13,73.93,260.74A182.09,182.09,0,0,1,136.68,123.21Z"/>
+            <path d="M290.59,277V34.59a34.59,34.59,0,0,0-69.19,0V277A34.59,34.59,0,1,0,290.59,277Z"/>
+        </svg>
+    </button>
+    <div id="connection-indicator"></div>
+    <div id="motherboard-power-indicator"></div>
+    <button class="button" id="1d">1D</button>
+    <button class="button" id="5d">5D</button>
+    <button class="button" id="1m">1M</button>
+    <div id="chart_div" style="width: 900px; height: 500px;"></div>
+    <div id="log-container"></div>
+</div>
+</body>
+</html>
